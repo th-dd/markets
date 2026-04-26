@@ -9,18 +9,42 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
+      # 0) 查询 koi/astr 两个工作流最近一次运行的 run-id（用来跨 run 下载 artifact）
+      - name: Resolve latest run-ids of koi & astr
+        id: runids
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          KOI_WF_ID=$(gh api "/repos/${{ github.repository }}/actions/workflows/koi.yml" --jq '.id')
+          ASTR_WF_ID=$(gh api "/repos/${{ github.repository }}/actions/workflows/astr.yml" --jq '.id')
+
+          KOI_RUN_ID=$(gh api "/repos/${{ github.repository }}/actions/workflows/$KOI_WF_ID/runs?per_page=1" --jq '.workflow_runs[0].id')
+          ASTR_RUN_ID=$(gh api "/repos/${{ github.repository }}/actions/workflows/$ASTR_WF_ID/runs?per_page=1" --jq '.workflow_runs[0].id')
+
+          echo "koi_run_id=$KOI_RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "astr_run_id=$ASTR_RUN_ID" >> "$GITHUB_OUTPUT"
+
+      # 1) 跨 run 下载 koi 的数据
       - name: Download Koi Data
         uses: actions/download-artifact@v4
         with:
           name: koi-data
           path: dist/koi
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.runids.outputs.koi_run_id }}
 
+      # 2) 跨 run 下载 astr 的数据
       - name: Download Astr Data
         uses: actions/download-artifact@v4
         with:
           name: astr-data
           path: dist/astr
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.runids.outputs.astr_run_id }}
 
+      # 3) 生成统一入口页 /markets/index.html
       - name: Build unified markets page
         run: |
           mkdir -p dist/markets
@@ -140,6 +164,7 @@ jobs:
           
           touch dist/.nojekyll
 
+      # 4) 部署到 gh-pages
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
