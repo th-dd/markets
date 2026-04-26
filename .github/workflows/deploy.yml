@@ -114,7 +114,7 @@ jobs:
             </style>
           </head>
           <body>
-            <button id="copyBtn" class="copy-btn">📋 复制 Raw 链接</button>
+            <button id="copyBtn" class="copy-btn">📋 复制数据源链接</button>
 
             <div class="wrap">
               <h1>插件市场</h1>
@@ -137,9 +137,9 @@ jobs:
                 astr: { url: './astr/plugin_cache_original.json' }
               };
 
-              // 复制用：固定指向仓库 gh-pages 分支的 Raw（按你给定的完整路径）
-              const RAW_MAP = {
-                koi: 'https://raw.githubusercontent.com/th-dd/markets/refs/heads/gh-pages/koi/index.json',
+              // 复制链接配置
+              const COPY_MAP = {
+                koi: 'https://markets.th-dd.top/koi/index.json',
                 astr: 'https://raw.githubusercontent.com/th-dd/markets/refs/heads/gh-pages/astr/plugin_cache_original.json'
               };
 
@@ -229,19 +229,19 @@ jobs:
               searchInput.addEventListener('input', e => { searchTerm = e.target.value.trim(); currentPage = 1; render(); });
               tabs.forEach(b => b.addEventListener('click', () => switchTo(b.getAttribute('data-source'))));
 
-              // 复制：按当前 Tab 复制对应的 Raw 链接（固定为你给的路径）
+              // 复制逻辑：按当前 Tab 复制对应的“站点域名/Koi 的 index.json”或“Astr 的 Raw 链接”
               copyBtn.addEventListener('click', async () => {
                 try {
-                  await navigator.clipboard.writeText(RAW_MAP[active]);
+                  await navigator.clipboard.writeText(COPY_MAP[active]);
                   copyBtn.textContent = '✅ 已复制';
                   copyBtn.classList.add('success');
                   setTimeout(() => {
-                    copyBtn.textContent = '📋 复制 Raw 链接';
+                    copyBtn.textContent = '📋 复制数据源链接';
                     copyBtn.classList.remove('success');
                   }, 1500);
                 } catch (e) {
                   copyBtn.textContent = '❌ 失败';
-                  setTimeout(() => { copyBtn.textContent = '📋 复制 Raw 链接'; }, 1500);
+                  setTimeout(() => { copyBtn.textContent = '📋 复制数据源链接'; }, 1500);
                 }
               });
 
