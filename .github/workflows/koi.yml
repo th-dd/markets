@@ -11,31 +11,49 @@ jobs:
           mkdir -p koi
           curl -fsSL "https://registry.koishi.chat/index.json" -o "koi/index.json"
 
-      # === 新增：清洗数据，提取深层嵌套的 packages 为一维数组 ===
       - name: Preprocess Koi Data
         run: |
           node -e "
           const fs = require('fs');
           const raw = JSON.parse(fs.readFileSync('koi/index.json', 'utf8'));
           let allPlugins = [];
-          
+
           // 遍历所有顶层命名空间 (如 koishi, satori)
           for (const ns in raw) {
             const namespace = raw[ns];
             // 如果下面有 packages 数组，提取出来
             if (namespace && Array.isArray(namespace.packages)) {
               allPlugins = allPlugins.concat(namespace.packages);
-            } 
-            // 兼容处理：如果本身就是数组，直接合并
+            }
+            // 兼容：如果本身就是数组，直接合并
             else if (Array.isArray(namespace)) {
               allPlugins = allPlugins.concat(namespace);
             }
+            // 兜底：如果是个对象，尝试它的每个属性是否是数组
+            else if (typeof namespace === 'object' && namespace !== null) {
+              for (const key in namespace) {
+                if (Array.isArray(namespace[key])) {
+                  allPlugins = allPlugins.concat(namespace[key]);
+                }
+              }
+            }
           }
-          
-          // 覆盖写成一个干干净净的纯数组文件
-          fs.writeFileSync('koi/flat.json', JSON.stringify(allPlugins));
-          console.log('清洗完成，共提取插件数量: ' + allPlugins.length);
+
+          // 裁剪字段（只保留前端用到的，降低体积）
+          const picked = allPlugins.map(p => ({
+            name: p.name || '',
+            version: p.version || '',
+            description: p.description || p.desc || '',
+            author: p.author || '',
+            repo: p.repo || p.repository || '',
+            tags: Array.isArray(p.tags) ? p.tags : []
+          }));
+
+          fs.writeFileSync('koi/flat.json', JSON.stringify(picked));
+          console.log('清洗完成，共提取插件数量: ' + picked.length);
           "
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
 
       - name: Upload Koi Artifact
         uses: actions/upload-artifact@v4
