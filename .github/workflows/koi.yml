@@ -16,41 +16,91 @@ jobs:
           node -e "
           const fs = require('fs');
           const raw = JSON.parse(fs.readFileSync('koi/index.json', 'utf8'));
-          let allPlugins = [];
+          let all = [];
 
-          // 遍历所有顶层命名空间 (如 koishi, satori)
-          for (const ns in raw) {
-            const namespace = raw[ns];
-            // 如果下面有 packages 数组，提取出来
-            if (namespace && Array.isArray(namespace.packages)) {
-              allPlugins = allPlugins.concat(namespace.packages);
-            }
-            // 兼容：如果本身就是数组，直接合并
-            else if (Array.isArray(namespace)) {
-              allPlugins = allPlugins.concat(namespace);
-            }
-            // 兜底：如果是个对象，尝试它的每个属性是否是数组
-            else if (typeof namespace === 'object' && namespace !== null) {
-              for (const key in namespace) {
-                if (Array.isArray(namespace[key])) {
-                  allPlugins = allPlugins.concat(namespace[key]);
+          // 路径 A：官方实际结构 { objects: [ { package: {...}, ... } ] }
+          if (Array.isArray(raw.objects)) {
+            raw.objects.forEach(o => {
+              if (o && typeof o === 'object') {
+                const pkg = o.package || {};
+                const links = pkg.links || {};
+                const maint = Array.isArray(pkg.maintainers) && pkg.maintainers.length ? pkg.maintainers[0] : null;
+                const pub = pkg.publisher || null;
+                const author =
+                  (pub && pub.username) ||
+                  (maint && maint.username) || '';
+
+                const name = pkg.name || o.shortname || '';
+                const version = pkg.version || '';
+                const description =
+                  (pkg.manifest && pkg.manifest.description && (pkg.manifest.description.zh || pkg.manifest.description.en)) ||
+                  pkg.description || '';
+                const repo =
+                  links.repository || links.npm || '';
+
+                const tags = Array.isArray(pkg.keywords) ? pkg.keywords : [];
+
+                if (name) {
+                  all.push({ name, version, description, author, repo, tags });
                 }
+              }
+            });
+          }
+
+          // 路径 B：兜底（如果将来接口改回“命名空间.packages”之类结构）
+          if (!all.length) {
+            for (const ns in raw) {
+              const namespace = raw[ns];
+              if (namespace && Array.isArray(namespace.packages)) {
+                namespace.packages.forEach(p => {
+                  const pkg = p.package || p;
+                  const links = pkg.links || {};
+                  const maint = Array.isArray(pkg.maintainers) && pkg.maintainers.length ? pkg.maintainers[0] : null;
+                  const pub = pkg.publisher || null;
+                  const author =
+                    (pub && pub.username) ||
+                    (maint && maint.username) || '';
+
+                  const name = pkg.name || p.shortname || '';
+                  const version = pkg.version || '';
+                  const description =
+                    (pkg.manifest && pkg.manifest.description && (pkg.manifest.description.zh || pkg.manifest.description.en)) ||
+                    pkg.description || '';
+                  const repo = links.repository || links.npm || '';
+                  const tags = Array.isArray(pkg.keywords) ? pkg.keywords : [];
+
+                  if (name) {
+                    all.push({ name, version, description, author, repo, tags });
+                  }
+                });
+              } else if (Array.isArray(namespace)) {
+                namespace.forEach(p => {
+                  const pkg = p.package || p;
+                  const links = pkg.links || {};
+                  const maint = Array.isArray(pkg.maintainers) && pkg.maintainers.length ? pkg.maintainers[0] : null;
+                  const pub = pkg.publisher || null;
+                  const author =
+                    (pub && pub.username) ||
+                    (maint && maint.username) || '';
+
+                  const name = pkg.name || p.shortname || '';
+                  const version = pkg.version || '';
+                  const description =
+                    (pkg.manifest && pkg.manifest.description && (pkg.manifest.description.zh || pkg.manifest.description.en)) ||
+                    pkg.description || '';
+                  const repo = links.repository || links.npm || '';
+                  const tags = Array.isArray(pkg.keywords) ? pkg.keywords : [];
+
+                  if (name) {
+                    all.push({ name, version, description, author, repo, tags });
+                  }
+                });
               }
             }
           }
 
-          // 裁剪字段（只保留前端用到的，降低体积）
-          const picked = allPlugins.map(p => ({
-            name: p.name || '',
-            version: p.version || '',
-            description: p.description || p.desc || '',
-            author: p.author || '',
-            repo: p.repo || p.repository || '',
-            tags: Array.isArray(p.tags) ? p.tags : []
-          }));
-
-          fs.writeFileSync('koi/flat.json', JSON.stringify(picked));
-          console.log('清洗完成，共提取插件数量: ' + picked.length);
+          fs.writeFileSync('koi/flat.json', JSON.stringify(all));
+          console.log('清洗完成，共提取插件数量: ' + all.length);
           "
         env:
           NODE_OPTIONS: "--max-old-space-size=4096"
