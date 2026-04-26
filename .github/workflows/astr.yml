@@ -11,13 +11,8 @@ jobs:
           mkdir -p astr
           SRC_URL="https://github.com/AstrBotDevs/AstrBot_Plugins_Collection/raw/refs/heads/main/plugin_cache_original.json"
           
-          # 计算哈希用于缓存控制
-          HASH=$(curl -fsSL "$SRC_URL" | sha256sum | awk '{print $1}')
-          
-          # 拉取并保存
-          curl -fsSL "$SRC_URL" -o "astr/index.${HASH}.json"
-          cp "astr/index.${HASH}.json" astr/index.json
-          echo "$HASH" > astr/version.txt
+          # 拉取官方原始文件，严格只保留这 1 个文件
+          curl -fsSL "$SRC_URL" -o "astr/plugin_cache_original.json"
 
       - name: Upload Astr Artifact
         uses: actions/upload-artifact@v4
