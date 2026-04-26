@@ -1,6 +1,9 @@
 name: 部署到 Pages
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 permissions:
   contents: write
