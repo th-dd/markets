@@ -85,9 +85,37 @@ jobs:
               .loading { margin-top: 12px; color: #94a3b8; }
               .error { color: #f87171; margin-top: 8px; }
               .footer { margin-top: 30px; font-size: 0.8rem; color: #64748b; border-top: 1px solid var(--border); padding-top: 12px; }
+
+              .copy-btn {
+                position: fixed;
+                z-index: 1000;
+                padding: 8px 16px;
+                background: var(--card);
+                color: var(--text);
+                border: 1px solid var(--border);
+                cursor: pointer;
+                font-size: 0.9rem;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                transition: all 0.2s;
+                box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+                backdrop-filter: blur(4px);
+              }
+              .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+              .copy-btn.success { border-color: #22c55e; color: #22c55e; }
+
+              @media (min-width: 769px) {
+                .copy-btn { top: 20px; right: 20px; border-radius: 999px; }
+              }
+              @media (max-width: 768px) {
+                .copy-btn { bottom: 20px; right: 20px; border-radius: 8px; }
+              }
             </style>
           </head>
           <body>
+            <button id="copyBtn" class="copy-btn">📋 复制 Raw 链接</button>
+
             <div class="wrap">
               <h1>插件市场</h1>
               <p class="sub">Koi / Astr 插件统一浏览与搜索</p>
@@ -109,6 +137,12 @@ jobs:
                 astr: { url: './astr/plugin_cache_original.json' }
               };
 
+              // 复制用：固定指向仓库 gh-pages 分支的 Raw（按你给定的完整路径）
+              const RAW_MAP = {
+                koi: 'https://raw.githubusercontent.com/th-dd/markets/refs/heads/gh-pages/koi/index.json',
+                astr: 'https://raw.githubusercontent.com/th-dd/markets/refs/heads/gh-pages/astr/plugin_cache_original.json'
+              };
+
               let cache = {};
               let active = 'koi';
               let searchTerm = '';
@@ -121,6 +155,7 @@ jobs:
               const pagerEl = document.getElementById('pager');
               const searchInput = document.getElementById('searchInput');
               const tabs = document.querySelectorAll('.tab');
+              const copyBtn = document.getElementById('copyBtn');
 
               function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
 
@@ -128,8 +163,8 @@ jobs:
                 if (Array.isArray(data)) return data;
                 if (data && typeof data === 'object') {
                   const v = Object.values(data);
-                  if (v.length > 0 && v.every(x => x && typeof x === 'object' && !Array.isArray(x))) return v; // Astr：对象映射
-                  if (v.every(x => Array.isArray(x))) return v.flat(); // 多命名空间的情况
+                  if (v.length > 0 && v.every(x => x && typeof x === 'object' && !Array.isArray(x))) return v;
+                  if (v.every(x => Array.isArray(x))) return v.flat();
                 }
                 return [];
               }
@@ -138,113 +173,78 @@ jobs:
                 const arr = getArray(cache[active]);
                 if (!searchTerm) return arr;
                 const l = searchTerm.toLowerCase();
-                return arr.filter(i =>
-                  Object.values(i).some(v => String(v).toLowerCase().includes(l))
-                );
+                return arr.filter(i => Object.values(i).some(v => String(v).toLowerCase().includes(l)));
               }
 
               function render() {
                 grid.innerHTML = '';
                 pagerEl.innerHTML = '';
                 status.textContent = '';
-
-                if (!cache[active]) {
-                  status.className = 'loading';
-                  status.textContent = '正在加载…';
-                  return;
-                }
-
+                if (!cache[active]) { status.className = 'loading'; status.textContent = '正在加载…'; return; }
                 const filtered = getFilteredData();
                 countEl.textContent = '匹配插件数量：' + filtered.length;
-
                 const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
                 if (currentPage > totalPages) currentPage = totalPages;
-
                 const startIdx = (currentPage - 1) * PAGE_SIZE;
                 const pageData = filtered.slice(startIdx, startIdx + PAGE_SIZE);
-
-                if (pageData.length === 0) {
-                  status.className = 'error';
-                  status.textContent = '没有找到匹配的插件';
-                  return;
-                }
-
+                if (pageData.length === 0) { status.className = 'error'; status.textContent = '没有找到匹配的插件'; return; }
                 pageData.forEach(p => {
-                  const c = document.createElement('div');
-                  c.className = 'card';
-                  const name = p.name || p.display_name || '';
-                  const ver = p.version || '';
-                  const desc = p.description || p.desc || '';
-                  const repo = p.repo || p.repository || '';
-                  const tags = p.tags || [];
-                  const author = p.author || '';
-
+                  const c = document.createElement('div'); c.className = 'card';
+                  const name = p.name || p.display_name || '', ver = p.version || '', desc = p.description || p.desc || '', repo = p.repo || p.repository || '', tags = p.tags || [], author = p.author || '';
                   let h = '<div class="card-name"><span>' + esc(name) + '</span>';
-                  if (ver) h += '<span class="badge">' + esc(ver) + '</span>';
-                  h += '</div>';
+                  if (ver) h += '<span class="badge">' + esc(ver) + '</span>'; h += '</div>';
                   if (author) h += '<div class="author">作者：' + esc(author) + '</div>';
                   if (desc) h += '<div class="desc">' + esc(desc) + '</div>';
                   if (tags && tags.length) h += '<div class="tags">' + tags.map(t => '<span class="tag">' + esc(t) + '</span>').join('') + '</div>';
                   if (repo) h += '<div>仓库：<a class="repo" target="_blank" rel="noopener noreferrer" href="' + esc(repo) + '">' + esc(repo) + '</a></div>';
-                  c.innerHTML = h;
-                  grid.appendChild(c);
+                  c.innerHTML = h; grid.appendChild(c);
                 });
-
                 if (totalPages > 1) {
                   pagerEl.style.display = 'flex';
                   let pb = '<button class="page-btn" onclick="goToPage('+(currentPage-1)+')" '+(currentPage===1?'disabled':'')+'>上一页</button>';
-                  let ph = '';
-                  for (let i = 1; i <= totalPages; i++) {
-                    if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
-                      ph += '<button class="page-btn '+(i===currentPage?'active':'')+'" onclick="goToPage('+i+')">'+i+'</button>';
-                    } else if (i === currentPage - 3 || i === currentPage + 3) {
-                      ph += '<span class="page-dots">...</span>';
-                    }
-                  }
+                  let ph = ''; for (let i = 1; i <= totalPages; i++) { if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) { ph += '<button class="page-btn '+(i===currentPage?'active':'')+'" onclick="goToPage('+i+')">'+i+'</button>'; } else if (i === currentPage - 3 || i === currentPage + 3) { ph += '<span class="page-dots">...</span>'; } }
                   let nb = '<button class="page-btn" onclick="goToPage('+(currentPage+1)+')" '+(currentPage===totalPages?'disabled':'')+'>下一页</button>';
                   pagerEl.innerHTML = pb + ph + nb;
-                } else {
-                  pagerEl.style.display = 'none';
-                }
+                } else { pagerEl.style.display = 'none'; }
               }
 
-              window.goToPage = function(page) {
-                currentPage = page;
-                render();
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-              };
+              window.goToPage = function(page) { currentPage = page; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
               window.switchTo = async function(source) {
                 active = source;
                 tabs.forEach(b => b.classList.toggle('active', b.getAttribute('data-source') === source));
-                searchInput.value = '';
-                searchTerm = '';
-                currentPage = 1;
-                status.className = 'loading';
-                status.textContent = '正在加载…';
-                grid.innerHTML = '';
+                searchInput.value = ''; searchTerm = ''; currentPage = 1;
+                status.className = 'loading'; status.textContent = '正在加载…'; grid.innerHTML = '';
                 try {
                   if (!cache[source]) {
                     const r = await fetch(TAB_MAP[source].url);
                     if (!r.ok) throw new Error('HTTP ' + r.status);
                     const j = await r.json();
-                    // 统一为数组：如果是对象就转成对象值的数组
                     cache[source] = Array.isArray(j) ? j : (j && typeof j === 'object' ? Object.values(j) : []);
                   }
                   render();
-                } catch (e) {
-                  status.className = 'error';
-                  status.textContent = '加载失败：' + e.message;
-                }
+                } catch (e) { status.className = 'error'; status.textContent = '加载失败：' + e.message; }
               };
 
-              searchInput.addEventListener('input', e => {
-                searchTerm = e.target.value.trim();
-                currentPage = 1;
-                render();
+              searchInput.addEventListener('input', e => { searchTerm = e.target.value.trim(); currentPage = 1; render(); });
+              tabs.forEach(b => b.addEventListener('click', () => switchTo(b.getAttribute('data-source'))));
+
+              // 复制：按当前 Tab 复制对应的 Raw 链接（固定为你给的路径）
+              copyBtn.addEventListener('click', async () => {
+                try {
+                  await navigator.clipboard.writeText(RAW_MAP[active]);
+                  copyBtn.textContent = '✅ 已复制';
+                  copyBtn.classList.add('success');
+                  setTimeout(() => {
+                    copyBtn.textContent = '📋 复制 Raw 链接';
+                    copyBtn.classList.remove('success');
+                  }, 1500);
+                } catch (e) {
+                  copyBtn.textContent = '❌ 失败';
+                  setTimeout(() => { copyBtn.textContent = '📋 复制 Raw 链接'; }, 1500);
+                }
               });
 
-              tabs.forEach(b => b.addEventListener('click', () => switchTo(b.getAttribute('data-source'))));
               switchTo('koi');
             </script>
           </body>
