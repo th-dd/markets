@@ -20,7 +20,6 @@ jobs:
           echo "koi_id=$KOI_ID" >> $GITHUB_OUTPUT
           echo "astr_id=$ASTR_ID" >> $GITHUB_OUTPUT
           echo "deploy_id=$DEPLOY_ID" >> $GITHUB_OUTPUT
-          echo "before=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> $GITHUB_OUTPUT
 
       - name: Trigger Pull Workflows
         env:
@@ -36,20 +35,20 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          BEFORE="${{ steps.get_ids.outputs.before }}"
           KOI_ID="${{ steps.get_ids.outputs.koi_id }}"
           ASTR_ID="${{ steps.get_ids.outputs.astr_id }}"
           
           echo "开始轮询运行状态..."
           while true; do
-            KOI_STATUS=$(gh api "/repos/${{ github.repository }}/actions/workflows/$KOI_ID/runs?created=>$BEFORE&per_page=1" --jq '.workflow_runs[0].status')
-            ASTR_STATUS=$(gh api "/repos/${{ github.repository }}/actions/workflows/$ASTR_ID/runs?created=>$BEFORE&per_page=1" --jq '.workflow_runs[0].status')
+            # 直接获取最新的一条运行记录，不再使用时间戳过滤，解决秒级竞态问题
+            KOI_STATUS=$(gh api "/repos/${{ github.repository }}/actions/workflows/$KOI_ID/runs?per_page=1" --jq '.workflow_runs[0].status')
+            ASTR_STATUS=$(gh api "/repos/${{ github.repository }}/actions/workflows/$ASTR_ID/runs?per_page=1" --jq '.workflow_runs[0].status')
             
             echo "Koi状态: $KOI_STATUS | Astr状态: $ASTR_STATUS"
             
             if [[ "$KOI_STATUS" == "completed" && "$ASTR_STATUS" == "completed" ]]; then
-              KOI_CONCLUSION=$(gh api "/repos/${{ github.repository }}/actions/workflows/$KOI_ID/runs?created=>$BEFORE&per_page=1" --jq '.workflow_runs[0].conclusion')
-              ASTR_CONCLUSION=$(gh api "/repos/${{ github.repository }}/actions/workflows/$ASTR_ID/runs?created=>$BEFORE&per_page=1" --jq '.workflow_runs[0].conclusion')
+              KOI_CONCLUSION=$(gh api "/repos/${{ github.repository }}/actions/workflows/$KOI_ID/runs?per_page=1" --jq '.workflow_runs[0].conclusion')
+              ASTR_CONCLUSION=$(gh api "/repos/${{ github.repository }}/actions/workflows/$ASTR_ID/runs?per_page=1" --jq '.workflow_runs[0].conclusion')
               
               if [[ "$KOI_CONCLUSION" == "success" && "$ASTR_CONCLUSION" == "success" ]]; then
                 echo "两个拉取任务均成功！"
