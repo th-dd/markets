@@ -6,19 +6,36 @@ jobs:
   sync-koi:
     runs-on: ubuntu-latest
     steps:
-      - name: Sync Koi registry
+      - name: Sync Koi plugin market
         run: |
           mkdir -p koi
+          curl -fsSL "https://registry.koishi.chat/index.json" -o "koi/index.json"
+
+      # === 新增：清洗数据，提取深层嵌套的 packages 为一维数组 ===
+      - name: Preprocess Koi Data
+        run: |
+          node -e "
+          const fs = require('fs');
+          const raw = JSON.parse(fs.readFileSync('koi/index.json', 'utf8'));
+          let allPlugins = [];
           
-          # 拉取最新版本号
-          curl -fsSL "https://github.com/koishijs/registry/raw/refs/heads/release/version.txt" -o koi/version.txt
-          CURRENT_HASH=$(cat koi/version.txt | tr -d '[:space:]')
+          // 遍历所有顶层命名空间 (如 koishi, satori)
+          for (const ns in raw) {
+            const namespace = raw[ns];
+            // 如果下面有 packages 数组，提取出来
+            if (namespace && Array.isArray(namespace.packages)) {
+              allPlugins = allPlugins.concat(namespace.packages);
+            } 
+            // 兼容处理：如果本身就是数组，直接合并
+            else if (Array.isArray(namespace)) {
+              allPlugins = allPlugins.concat(namespace);
+            }
+          }
           
-          # 拉取最新哈希文件
-          curl -fsSL "https://github.com/koishijs/registry/raw/refs/heads/release/index.${CURRENT_HASH}.json" -o "koi/index.${CURRENT_HASH}.json"
-          
-          # 生成通用入口
-          cp "koi/index.${CURRENT_HASH}.json" koi/index.json
+          // 覆盖写成一个干干净净的纯数组文件
+          fs.writeFileSync('koi/flat.json', JSON.stringify(allPlugins));
+          console.log('清洗完成，共提取插件数量: ' + allPlugins.length);
+          "
 
       - name: Upload Koi Artifact
         uses: actions/upload-artifact@v4
