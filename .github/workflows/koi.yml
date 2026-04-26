@@ -1,0 +1,32 @@
+name: 拉取数据
+on:
+  workflow_dispatch:
+
+jobs:
+  sync-koishi:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync Koishi registry
+        run: |
+          mkdir -p koishi
+          
+          # 尝试从上一次的 artifact 读取旧哈希（防 gap，如果拉取失败可忽略）
+          PREV_HASH=""
+          
+          # 拉取最新版本号
+          curl -fsSL "https://github.com/koishijs/registry/raw/refs/heads/release/version.txt" -o koishi/version.txt
+          CURRENT_HASH=$(cat koishi/version.txt | tr -d '[:space:]')
+          
+          # 拉取最新哈希文件
+          curl -fsSL "https://github.com/koishijs/registry/raw/refs/heads/release/index.${CURRENT_HASH}.json" -o "koishi/index.${CURRENT_HASH}.json"
+          
+          # 生成通用入口
+          cp "koishi/index.${CURRENT_HASH}.json" koishi/index.json
+
+      # 将文件夹打包成产物，供 deploy.yml 使用
+      - name: Upload Koishi Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: koishi-data
+          path: koishi/
+          retention-days: 1 # 只保留1天，避免占用空间
