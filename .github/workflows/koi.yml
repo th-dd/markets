@@ -1,32 +1,28 @@
-name: 拉取数据
+name: 拉取 Koi 数据
 on:
   workflow_dispatch:
 
 jobs:
-  sync-koishi:
+  sync-koi:
     runs-on: ubuntu-latest
     steps:
-      - name: Sync Koishi registry
+      - name: Sync Koi registry
         run: |
-          mkdir -p koishi
-          
-          # 尝试从上一次的 artifact 读取旧哈希（防 gap，如果拉取失败可忽略）
-          PREV_HASH=""
+          mkdir -p koi
           
           # 拉取最新版本号
-          curl -fsSL "https://github.com/koishijs/registry/raw/refs/heads/release/version.txt" -o koishi/version.txt
-          CURRENT_HASH=$(cat koishi/version.txt | tr -d '[:space:]')
+          curl -fsSL "https://github.com/koishijs/registry/raw/refs/heads/release/version.txt" -o koi/version.txt
+          CURRENT_HASH=$(cat koi/version.txt | tr -d '[:space:]')
           
           # 拉取最新哈希文件
-          curl -fsSL "https://github.com/koishijs/registry/raw/refs/heads/release/index.${CURRENT_HASH}.json" -o "koishi/index.${CURRENT_HASH}.json"
+          curl -fsSL "https://github.com/koishijs/registry/raw/refs/heads/release/index.${CURRENT_HASH}.json" -o "koi/index.${CURRENT_HASH}.json"
           
           # 生成通用入口
-          cp "koishi/index.${CURRENT_HASH}.json" koishi/index.json
+          cp "koi/index.${CURRENT_HASH}.json" koi/index.json
 
-      # 将文件夹打包成产物，供 deploy.yml 使用
-      - name: Upload Koishi Artifact
+      - name: Upload Koi Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: koishi-data
-          path: koishi/
-          retention-days: 1 # 只保留1天，避免占用空间
+          name: koi-data
+          path: koi/
+          retention-days: 1
