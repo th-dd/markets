@@ -103,16 +103,65 @@ jobs:
               <div class="footer">数据来自上游官方仓库，仅供镜像与检索使用。</div>
             </div>
             <script>
-              const TAB_MAP = { koi: { url: './koi/index.json' }, astr: { url: './astr/plugin_cache_original.json' } };
+              const TAB_MAP = { 
+                koi: { url: './koi/flat.json' }, 
+                astr: { url: './astr/plugin_cache_original.json' } 
+              };
               let cache = {}, active = 'koi', searchTerm = '', currentPage = 1;
               const PAGE_SIZE = 20;
               const grid = document.getElementById('grid'), status = document.getElementById('status'), countEl = document.getElementById('count'), pagerEl = document.getElementById('pager'), searchInput = document.getElementById('searchInput'), tabs = document.querySelectorAll('.tab');
+              
               function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
-              function flattenData(data) { if (Array.isArray(data)) return data; let e = []; if (typeof data === 'object' && data !== null) { for (const k in data) { if (Array.isArray(data[k])) e = e.concat(data[k]); else e.push(data[k]); } } return e; }
-              function getFilteredData() { let d = cache[active]; if (!d) return []; let f = flattenData(d); if (searchTerm) { const l = searchTerm.toLowerCase(); f = f.filter(i => Object.values(i).some(v => String(v).toLowerCase().includes(l))); } return f; }
-              function render() { grid.innerHTML = ''; pagerEl.innerHTML = ''; status.textContent = ''; if (!cache[active]) { status.className = 'loading'; status.textContent = '正在加载…'; return; } const filtered = getFilteredData(); countEl.textContent = '匹配插件数量：' + filtered.length; const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE)); if (currentPage > totalPages) currentPage = totalPages; const startIdx = (currentPage - 1) * PAGE_SIZE; const pageData = filtered.slice(startIdx, startIdx + PAGE_SIZE); if (pageData.length === 0) { status.className = 'error'; status.textContent = '没有找到匹配的插件'; return; } pageData.forEach(function (p) { const c = document.createElement('div'); c.className = 'card'; const name = p.name || p.display_name || '', ver = p.version || '', desc = p.description || p.desc || '', repo = p.repo || p.repository || '', tags = p.tags || [], author = p.author || ''; let h = '<div class="card-name"><span>' + esc(name) + '</span>'; if (ver) h += '<span class="badge">' + esc(ver) + '</span>'; h += '</div>'; if (author) h += '<div class="author">作者：' + esc(author) + '</div>'; if (desc) h += '<div class="desc">' + esc(desc) + '</div>'; if (tags && tags.length) h += '<div class="tags">' + tags.map(function (t) { return '<span class="tag">' + esc(t) + '</span>'; }).join('') + '</div>'; if (repo) h += '<div>仓库：<a class="repo" target="_blank" rel="noopener" href="' + esc(repo) + '">' + esc(repo) + '</a></div>'; c.innerHTML = h; grid.appendChild(c); }); if (totalPages > 1) { pagerEl.style.display = 'flex'; let pb = '<button class="page-btn" onclick="goToPage('+(currentPage-1)+')" '+(currentPage===1?'disabled':'')+'>上一页</button>'; let ph = ''; for (let i = 1; i <= totalPages; i++) { if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) { ph += '<button class="page-btn '+(i===currentPage?'active':'')+'" onclick="goToPage('+i+')">'+i+'</button>'; } else if (i === currentPage - 3 || i === currentPage + 3) { ph += '<span class="page-dots">...</span>'; } } let nb = '<button class="page-btn" onclick="goToPage('+(currentPage+1)+')" '+(currentPage===totalPages?'disabled':'')+'>下一页</button>'; pagerEl.innerHTML = pb + ph + nb; } else { pagerEl.style.display = 'none'; } }
+              
+              function flattenData(data) { 
+                if (Array.isArray(data)) return data; 
+                let e = []; 
+                for (const k in data) { if (Array.isArray(data[k])) e = e.concat(data[k]); } 
+                return e; 
+              }
+              
+              function getFilteredData() { 
+                let d = cache[active]; if (!d) return []; 
+                let f = flattenData(d); 
+                if (searchTerm) { const l = searchTerm.toLowerCase(); f = f.filter(i => Object.values(i).some(v => String(v).toLowerCase().includes(l))); } 
+                return f; 
+              }
+              
+              function render() { 
+                grid.innerHTML = ''; pagerEl.innerHTML = ''; status.textContent = ''; 
+                if (!cache[active]) { status.className = 'loading'; status.textContent = '正在加载…'; return; } 
+                const filtered = getFilteredData(); 
+                countEl.textContent = '匹配插件数量：' + filtered.length; 
+                const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE)); 
+                if (currentPage > totalPages) currentPage = totalPages; 
+                const startIdx = (currentPage - 1) * PAGE_SIZE; 
+                const pageData = filtered.slice(startIdx, startIdx + PAGE_SIZE); 
+                if (pageData.length === 0) { status.className = 'error'; status.textContent = '没有找到匹配的插件'; return; } 
+                pageData.forEach(function (p) { 
+                  const c = document.createElement('div'); c.className = 'card'; 
+                  const name = p.name || p.display_name || '', ver = p.version || '', desc = p.description || p.desc || '', repo = p.repo || p.repository || '', tags = p.tags || [], author = p.author || ''; 
+                  let h = '<div class="card-name"><span>' + esc(name) + '</span>'; 
+                  if (ver) h += '<span class="badge">' + esc(ver) + '</span>'; h += '</div>'; 
+                  if (author) h += '<div class="author">作者：' + esc(author) + '</div>'; 
+                  if (desc) h += '<div class="desc">' + esc(desc) + '</div>'; 
+                  if (tags && tags.length) h += '<div class="tags">' + tags.map(function (t) { return '<span class="tag">' + esc(t) + '</span>'; }).join('') + '</div>'; 
+                  if (repo) h += '<div>仓库：<a class="repo" target="_blank" rel="noopener" href="' + esc(repo) + '">' + esc(repo) + '</a></div>'; 
+                  c.innerHTML = h; grid.appendChild(c); 
+                }); 
+                if (totalPages > 1) { 
+                  pagerEl.style.display = 'flex'; 
+                  let pb = '<button class="page-btn" onclick="goToPage('+(currentPage-1)+')" '+(currentPage===1?'disabled':'')+'>上一页</button>'; 
+                  let ph = ''; for (let i = 1; i <= totalPages; i++) { if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) { ph += '<button class="page-btn '+(i===currentPage?'active':'')+'" onclick="goToPage('+i+')">'+i+'</button>'; } else if (i === currentPage - 3 || i === currentPage + 3) { ph += '<span class="page-dots">...</span>'; } } 
+                  let nb = '<button class="page-btn" onclick="goToPage('+(currentPage+1)+')" '+(currentPage===totalPages?'disabled':'')+'>下一页</button>'; 
+                  pagerEl.innerHTML = pb + ph + nb; 
+                } else { pagerEl.style.display = 'none'; } 
+              }
               window.goToPage = function(page) { currentPage = page; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
-              window.switchTo = async function(source) { active = source; tabs.forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-source') === source); }); searchInput.value = ''; searchTerm = ''; currentPage = 1; status.className = 'loading'; status.textContent = '正在加载…'; grid.innerHTML = ''; try { if (!cache[source]) { const r = await fetch(TAB_MAP[source].url); if (!r.ok) throw new Error('HTTP ' + r.status); cache[source] = await r.json(); } render(); } catch (e) { status.className = 'error'; status.textContent = '加载失败：' + e.message; } };
+              window.switchTo = async function(source) { 
+                active = source; tabs.forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-source') === source); }); 
+                searchInput.value = ''; searchTerm = ''; currentPage = 1; status.className = 'loading'; status.textContent = '正在加载…'; grid.innerHTML = ''; 
+                try { if (!cache[source]) { const r = await fetch(TAB_MAP[source].url); if (!r.ok) throw new Error('HTTP ' + r.status); cache[source] = await r.json(); } render(); } catch (e) { status.className = 'error'; status.textContent = '加载失败：' + e.message; } 
+              };
               searchInput.addEventListener('input', function(e) { searchTerm = e.target.value.trim(); currentPage = 1; render(); });
               tabs.forEach(function (b) { b.addEventListener('click', function () { switchTo(b.getAttribute('data-source')); }); });
               switchTo('koi');
@@ -121,7 +170,6 @@ jobs:
           </html>
           PAGE
           
-          # === 关键修复：强制写入 CNAME 文件锁死自定义域名 ===
           echo "markets.th-dd.top" > dist/CNAME
           touch dist/.nojekyll
 
