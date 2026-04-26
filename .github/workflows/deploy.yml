@@ -9,7 +9,6 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      # 0) 查询 koi/astr 两个工作流最近一次运行的 run-id（用来跨 run 下载 artifact）
       - name: Resolve latest run-ids of koi & astr
         id: runids
         env:
@@ -24,7 +23,6 @@ jobs:
           echo "koi_run_id=$KOI_RUN_ID" >> "$GITHUB_OUTPUT"
           echo "astr_run_id=$ASTR_RUN_ID" >> "$GITHUB_OUTPUT"
 
-      # 1) 跨 run 下载 koi 的数据
       - name: Download Koi Data
         uses: actions/download-artifact@v4
         with:
@@ -34,7 +32,6 @@ jobs:
           repository: ${{ github.repository }}
           run-id: ${{ steps.runids.outputs.koi_run_id }}
 
-      # 2) 跨 run 下载 astr 的数据
       - name: Download Astr Data
         uses: actions/download-artifact@v4
         with:
@@ -44,12 +41,10 @@ jobs:
           repository: ${{ github.repository }}
           run-id: ${{ steps.runids.outputs.astr_run_id }}
 
-      # 3) 生成统一入口页 /markets/index.html
       - name: Build unified markets page
         run: |
-          mkdir -p dist/markets
-          
-          cat > dist/markets/index.html << 'PAGE'
+          # 注意这里直接生成到根目录 dist/index.html
+          cat > dist/index.html << 'PAGE'
           <!DOCTYPE html>
           <html lang="zh-CN">
           <head>
@@ -96,8 +91,9 @@ jobs:
             </div>
             <script>
               const TAB_MAP = {
-                koi: { url: '../koi/index.json' },
-                astr: { url: '../astr/index.json' }
+                // 使用相对于根目录的路径
+                koi: { url: './koi/index.json' },
+                astr: { url: './astr/plugin_cache_original.json' }
               };
               let cache = {};
               const grid = document.getElementById('grid');
@@ -107,6 +103,22 @@ jobs:
               let active = 'koi';
 
               function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+
+              // 核心修复：将 Koi 按命名空间分组的数据，拍平成一维插件数组
+              function flattenData(data) {
+                if (Array.isArray(data)) return data;
+                let entries = [];
+                if (typeof data === 'object' && data !== null) {
+                  for (const key in data) {
+                    if (Array.isArray(data[key])) {
+                      entries = entries.concat(data[key]);
+                    } else {
+                      entries.push(data[key]);
+                    }
+                  }
+                }
+                return entries;
+              }
 
               async function ensure(source) {
                 if (cache[source]) return cache[source];
@@ -120,7 +132,8 @@ jobs:
               function render(source, data) {
                 grid.innerHTML = '';
                 status.textContent = '';
-                const entries = Array.isArray(data) ? data : Object.values(data || {});
+                // 使用拍平逻辑获取真正的插件列表
+                const entries = flattenData(data);
                 countEl.textContent = '插件数量：' + entries.length;
                 entries.forEach(function (p) {
                   const c = document.createElement('div');
@@ -164,7 +177,6 @@ jobs:
           
           touch dist/.nojekyll
 
-      # 4) 部署到 gh-pages
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
