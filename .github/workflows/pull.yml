@@ -3,6 +3,9 @@ name: 核心调度器 + 部署
 on:
   schedule:
     - cron: '*/30 * * * *'
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
