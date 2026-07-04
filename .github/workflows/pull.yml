@@ -1,23 +1,38 @@
+# ============================================================
+# 不要删除注释 - 这些注释用于说明每个任务的作用
+# ============================================================
+
 name: 核心调度器 + 部署
 
 on:
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '*/30 * * * *'      # 每30分钟自动运行
   push:
     branches:
-      - main
-  workflow_dispatch:
+      - main                     # 推送到 main 分支时触发
+  workflow_dispatch:             # 支持手动触发
 
 jobs:
+  # ============================================================
+  # 主控任务：同时触发三个数据源拉取，等待完成，失败则重试，
+  # 成功的用最新数据，失败的从 gh-pages 回退上次成功数据，
+  # 最后合并部署到 gh-pages
+  # ============================================================
   control-plane:
     runs-on: ubuntu-latest
     permissions:
-      actions: write
-      contents: write
+      actions: write             # 允许触发其他 workflow
+      contents: write            # 允许部署到 gh-pages
     steps:
+      # ------------------------------------------------------------
+      # 检出仓库代码（获取 index.html、CNAME 等静态文件）
+      # ------------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v7
 
+      # ------------------------------------------------------------
+      # 获取三个数据源 workflow 的 ID，用于后续触发和轮询
+      # ------------------------------------------------------------
       - name: Get Workflow IDs
         id: get_ids
         env:
@@ -31,6 +46,9 @@ jobs:
           echo "astr_id=$ASTR_ID" >> $GITHUB_OUTPUT
           echo "mai_id=$MAI_ID" >> $GITHUB_OUTPUT
 
+      # ------------------------------------------------------------
+      # 同时触发三个数据源的拉取 workflow（并行执行，节省时间）
+      # ------------------------------------------------------------
       - name: Trigger all workflows
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -39,8 +57,11 @@ jobs:
           gh api "/repos/${{ github.repository }}/actions/workflows/${{ steps.get_ids.outputs.astr_id }}/dispatches" -f ref=main
           gh api "/repos/${{ github.repository }}/actions/workflows/${{ steps.get_ids.outputs.mai_id }}/dispatches" -f ref=main
           echo "✅ 已同时触发三个数据源"
-          sleep 10
+          sleep 10                           # 等待 workflow 初始化
 
+      # ------------------------------------------------------------
+      # 轮询等待所有 workflow 完成，记录失败的源（最多等 60 秒）
+      # ------------------------------------------------------------
       - name: Wait for all workflows
         id: wait
         env:
@@ -50,7 +71,7 @@ jobs:
           ASTR_ID="${{ steps.get_ids.outputs.astr_id }}"
           MAI_ID="${{ steps.get_ids.outputs.mai_id }}"
 
-          MAX_WAIT=60
+          MAX_WAIT=60                        # 最多等待 60 秒
           WAIT_COUNT=0
 
           KOI_DONE=false
@@ -61,6 +82,7 @@ jobs:
           MAI_FAIL=false
 
           while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
+            # 检查 Koi 是否完成
             if [ "$KOI_DONE" = false ]; then
               KOI_STATUS=$(gh api "/repos/${{ github.repository }}/actions/workflows/$KOI_ID/runs?per_page=1" --jq '.workflow_runs[0].status')
               if [ "$KOI_STATUS" = "completed" ]; then
@@ -75,6 +97,7 @@ jobs:
               fi
             fi
 
+            # 检查 Astr 是否完成
             if [ "$ASTR_DONE" = false ]; then
               ASTR_STATUS=$(gh api "/repos/${{ github.repository }}/actions/workflows/$ASTR_ID/runs?per_page=1" --jq '.workflow_runs[0].status')
               if [ "$ASTR_STATUS" = "completed" ]; then
@@ -89,6 +112,7 @@ jobs:
               fi
             fi
 
+            # 检查 Mai 是否完成
             if [ "$MAI_DONE" = false ]; then
               MAI_STATUS=$(gh api "/repos/${{ github.repository }}/actions/workflows/$MAI_ID/runs?per_page=1" --jq '.workflow_runs[0].status')
               if [ "$MAI_STATUS" = "completed" ]; then
@@ -103,6 +127,7 @@ jobs:
               fi
             fi
 
+            # 全部完成则退出轮询
             if [ "$KOI_DONE" = true ] && [ "$ASTR_DONE" = true ] && [ "$MAI_DONE" = true ]; then
               echo "所有任务已完成"
               break
@@ -112,10 +137,15 @@ jobs:
             WAIT_COUNT=$((WAIT_COUNT + 5))
           done
 
+          # 输出失败状态供后续步骤使用
           echo "koi_fail=$KOI_FAIL" >> $GITHUB_OUTPUT
           echo "astr_fail=$ASTR_FAIL" >> $GITHUB_OUTPUT
           echo "mai_fail=$MAI_FAIL" >> $GITHUB_OUTPUT
 
+      # ------------------------------------------------------------
+      # 重试失败的 workflow（最多重试 2 次）
+      # 只有存在失败时才执行此步骤
+      # ------------------------------------------------------------
       - name: Retry failed workflows
         id: retry
         if: steps.wait.outputs.koi_fail == 'true' || steps.wait.outputs.astr_fail == 'true' || steps.wait.outputs.mai_fail == 'true'
@@ -133,6 +163,7 @@ jobs:
           for retry in 1 2; do
             echo "===== 第 $retry 次重试 ====="
             
+            # 只重试失败的源
             if [ "$KOI_FAIL" = "true" ]; then
               echo "重试 Koi..."
               gh api "/repos/${{ github.repository }}/actions/workflows/$KOI_ID/dispatches" -f ref=main
@@ -154,6 +185,7 @@ jobs:
 
             WAIT_COUNT=0
             while [ $WAIT_COUNT -lt 60 ]; do
+              # 检查 Koi 重试结果
               if [ "$KOI_FAIL" = "true" ] && [ "$KOI_RETRY_DONE" = false ]; then
                 STATUS=$(gh api "/repos/${{ github.repository }}/actions/workflows/$KOI_ID/runs?per_page=1" --jq '.workflow_runs[0].status')
                 if [ "$STATUS" = "completed" ]; then
@@ -168,6 +200,7 @@ jobs:
                 fi
               fi
 
+              # 检查 Astr 重试结果
               if [ "$ASTR_FAIL" = "true" ] && [ "$ASTR_RETRY_DONE" = false ]; then
                 STATUS=$(gh api "/repos/${{ github.repository }}/actions/workflows/$ASTR_ID/runs?per_page=1" --jq '.workflow_runs[0].status')
                 if [ "$STATUS" = "completed" ]; then
@@ -182,6 +215,7 @@ jobs:
                 fi
               fi
 
+              # 检查 Mai 重试结果
               if [ "$MAI_FAIL" = "true" ] && [ "$MAI_RETRY_DONE" = false ]; then
                 STATUS=$(gh api "/repos/${{ github.repository }}/actions/workflows/$MAI_ID/runs?per_page=1" --jq '.workflow_runs[0].status')
                 if [ "$STATUS" = "completed" ]; then
@@ -196,6 +230,7 @@ jobs:
                 fi
               fi
 
+              # 检查是否所有失败源都已完成重试
               ALL_DONE=true
               if [ "$KOI_FAIL" = "true" ] && [ "$KOI_RETRY_DONE" = false ]; then ALL_DONE=false; fi
               if [ "$ASTR_FAIL" = "true" ] && [ "$ASTR_RETRY_DONE" = false ]; then ALL_DONE=false; fi
@@ -209,6 +244,7 @@ jobs:
               WAIT_COUNT=$((WAIT_COUNT + 5))
             done
 
+            # 如果全部重试成功则退出
             if [ "$KOI_FAIL" != "true" ] && [ "$ASTR_FAIL" != "true" ] && [ "$MAI_FAIL" != "true" ]; then
               echo "✅ 所有重试成功"
               break
@@ -222,29 +258,38 @@ jobs:
             fi
           done
 
+          # 输出最终失败状态
           echo "koi_fail=$KOI_FAIL" >> $GITHUB_OUTPUT
           echo "astr_fail=$ASTR_FAIL" >> $GITHUB_OUTPUT
           echo "mai_fail=$MAI_FAIL" >> $GITHUB_OUTPUT
 
+      # ------------------------------------------------------------
+      # 创建 dist 目录结构（存放最终要部署的文件）
+      # ------------------------------------------------------------
       - name: Create dist directories
         run: |
           mkdir -p dist/koi dist/astr dist/mai
 
-      # 获取成功源的 Run ID（总是执行，内部判断）
+      # ------------------------------------------------------------
+      # 获取成功源的 Run ID（总是执行，内部判断哪些源成功了）
+      # 成功的源需要下载最新制品，失败的源走回退逻辑
+      # ------------------------------------------------------------
       - name: Resolve latest run-ids
         id: runids
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # retry 步骤被跳过时，这些变量为空，需要默认 false
+          # retry 步骤被跳过时（全部成功），这些变量为空，需要默认 false
           KOI_FAIL="${{ steps.retry.outputs.koi_fail }}"
           ASTR_FAIL="${{ steps.retry.outputs.astr_fail }}"
           MAI_FAIL="${{ steps.retry.outputs.mai_fail }}"
           
+          # 空值表示 retry 被跳过（全部成功），设为 false
           if [ -z "$KOI_FAIL" ]; then KOI_FAIL=false; fi
           if [ -z "$ASTR_FAIL" ]; then ASTR_FAIL=false; fi
           if [ -z "$MAI_FAIL" ]; then MAI_FAIL=false; fi
           
+          # 只获取成功源的 run-id
           if [ "$KOI_FAIL" != "true" ]; then
             KOI_WF_ID=$(gh api "/repos/${{ github.repository }}/actions/workflows/koi.yml" --jq '.id')
             KOI_RUN_ID=$(gh api "/repos/${{ github.repository }}/actions/workflows/$KOI_WF_ID/runs?per_page=1" --jq '.workflow_runs[0].id')
@@ -263,6 +308,10 @@ jobs:
             echo "mai_run_id=$MAI_RUN_ID" >> $GITHUB_OUTPUT
           fi
 
+      # ------------------------------------------------------------
+      # 下载成功的源的最新数据制品（仅当该源成功时执行）
+      # 使用上面获取的 run-id 下载对应制品
+      # ------------------------------------------------------------
       - name: Download Koi Data
         if: steps.retry.outputs.koi_fail != 'true'
         uses: actions/download-artifact@v8
@@ -293,6 +342,10 @@ jobs:
           repository: ${{ github.repository }}
           run-id: ${{ steps.runids.outputs.mai_run_id }}
 
+      # ------------------------------------------------------------
+      # 回退失败的源到上次成功部署的数据（从 gh-pages 分支获取）
+      # 仅当有失败源时执行，每个失败的源独立回退
+      # ------------------------------------------------------------
       - name: Fallback failed sources
         if: steps.retry.outputs.koi_fail == 'true' || steps.retry.outputs.astr_fail == 'true' || steps.retry.outputs.mai_fail == 'true'
         run: |
@@ -315,6 +368,10 @@ jobs:
             git show origin/gh-pages:mai/flat.json > dist/mai/flat.json 2>/dev/null || echo '[]' > dist/mai/flat.json
           fi
 
+      # ------------------------------------------------------------
+      # 复制静态文件到打包目录（index.html、CNAME、favicon.ico）
+      # 创建 .nojekyll 防止 GitHub Pages 忽略下划线开头的文件
+      # ------------------------------------------------------------
       - name: Prepare static files
         run: |
           cp index.html dist/
@@ -322,10 +379,14 @@ jobs:
           cp favicon.ico dist/
           touch dist/.nojekyll
 
+      # ------------------------------------------------------------
+      # 部署到 gh-pages 分支（force_orphan 确保每次都是干净的提交）
+      # 最终部署内容：静态文件 + 成功源的最新数据 + 失败源的回退数据
+      # ------------------------------------------------------------
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
           publish_branch: gh-pages
-          force_orphan: true
+          force_orphan: true # 启用孤儿提交以确保每次部署都是干净的提交
