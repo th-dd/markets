@@ -50,7 +50,7 @@ jobs:
           ASTR_ID="${{ steps.get_ids.outputs.astr_id }}"
           MAI_ID="${{ steps.get_ids.outputs.mai_id }}"
 
-          MAX_WAIT=60  # 最多等 60 秒
+          MAX_WAIT=60
           WAIT_COUNT=0
 
           KOI_DONE=false
@@ -61,7 +61,6 @@ jobs:
           MAI_FAIL=false
 
           while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
-            # 获取三个任务状态
             if [ "$KOI_DONE" = false ]; then
               KOI_STATUS=$(gh api "/repos/${{ github.repository }}/actions/workflows/$KOI_ID/runs?per_page=1" --jq '.workflow_runs[0].status')
               if [ "$KOI_STATUS" = "completed" ]; then
@@ -104,7 +103,6 @@ jobs:
               fi
             fi
 
-            # 如果全部完成，退出轮询
             if [ "$KOI_DONE" = true ] && [ "$ASTR_DONE" = true ] && [ "$MAI_DONE" = true ]; then
               echo "所有任务已完成"
               break
@@ -114,13 +112,13 @@ jobs:
             WAIT_COUNT=$((WAIT_COUNT + 5))
           done
 
-          # 记录失败状态供后续重试
           echo "koi_fail=$KOI_FAIL" >> $GITHUB_OUTPUT
           echo "astr_fail=$ASTR_FAIL" >> $GITHUB_OUTPUT
           echo "mai_fail=$MAI_FAIL" >> $GITHUB_OUTPUT
 
       # 重试失败的任务（最多重试 2 次）
       - name: Retry failed workflows
+        id: retry
         if: steps.wait.outputs.koi_fail == 'true' || steps.wait.outputs.astr_fail == 'true' || steps.wait.outputs.mai_fail == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -129,68 +127,70 @@ jobs:
           ASTR_ID="${{ steps.get_ids.outputs.astr_id }}"
           MAI_ID="${{ steps.get_ids.outputs.mai_id }}"
 
+          KOI_FAIL="${{ steps.wait.outputs.koi_fail }}"
+          ASTR_FAIL="${{ steps.wait.outputs.astr_fail }}"
+          MAI_FAIL="${{ steps.wait.outputs.mai_fail }}"
+
           for retry in 1 2; do
             echo "===== 第 $retry 次重试 ====="
             
-            # 重试失败的任务
-            if [ "${{ steps.wait.outputs.koi_fail }}" = "true" ]; then
+            if [ "$KOI_FAIL" = "true" ]; then
               echo "重试 Koi..."
               gh api "/repos/${{ github.repository }}/actions/workflows/$KOI_ID/dispatches" -f ref=main
             fi
-            if [ "${{ steps.wait.outputs.astr_fail }}" = "true" ]; then
+            if [ "$ASTR_FAIL" = "true" ]; then
               echo "重试 Astr..."
               gh api "/repos/${{ github.repository }}/actions/workflows/$ASTR_ID/dispatches" -f ref=main
             fi
-            if [ "${{ steps.wait.outputs.mai_fail }}" = "true" ]; then
+            if [ "$MAI_FAIL" = "true" ]; then
               echo "重试 Mai..."
               gh api "/repos/${{ github.repository }}/actions/workflows/$MAI_ID/dispatches" -f ref=main
             fi
 
             sleep 10
 
-            # 轮询重试的任务
             KOI_RETRY_DONE=false
             ASTR_RETRY_DONE=false
             MAI_RETRY_DONE=false
 
             WAIT_COUNT=0
             while [ $WAIT_COUNT -lt 60 ]; do
-              if [ "${{ steps.wait.outputs.koi_fail }}" = "true" ] && [ "$KOI_RETRY_DONE" = false ]; then
+              if [ "$KOI_FAIL" = "true" ] && [ "$KOI_RETRY_DONE" = false ]; then
                 STATUS=$(gh api "/repos/${{ github.repository }}/actions/workflows/$KOI_ID/runs?per_page=1" --jq '.workflow_runs[0].status')
                 if [ "$STATUS" = "completed" ]; then
                   KOI_RETRY_DONE=true
                   CONCLUSION=$(gh api "/repos/${{ github.repository }}/actions/workflows/$KOI_ID/runs?per_page=1" --jq '.workflow_runs[0].conclusion')
                   if [ "$CONCLUSION" = "success" ]; then
                     echo "✅ Koi 重试成功"
-                    echo "koi_fail=false" >> $GITHUB_OUTPUT
+                    KOI_FAIL=false
                   else
                     echo "❌ Koi 重试仍失败"
                   fi
                 fi
               fi
 
-              if [ "${{ steps.wait.outputs.astr_fail }}" = "true" ] && [ "$ASTR_RETRY_DONE" = false ]; then
+              if [ "$ASTR_FAIL" = "true" ] && [ "$ASTR_RETRY_DONE" = false ]; then
                 STATUS=$(gh api "/repos/${{ github.repository }}/actions/workflows/$ASTR_ID/runs?per_page=1" --jq '.workflow_runs[0].status')
                 if [ "$STATUS" = "completed" ]; then
                   ASTR_RETRY_DONE=true
                   CONCLUSION=$(gh api "/repos/${{ github.repository }}/actions/workflows/$ASTR_ID/runs?per_page=1" --jq '.workflow_runs[0].conclusion')
                   if [ "$CONCLUSION" = "success" ]; then
                     echo "✅ Astr 重试成功"
-                    echo "astr_fail=false" >> $GITHUB_OUTPUT
+                    ASTR_FAIL=false
                   else
                     echo "❌ Astr 重试仍失败"
                   fi
                 fi
               fi
 
-              if [ "${{ steps.wait.outputs.mai_fail }}" = "true" ] && [ "$MAI_RETRY_DONE" = false ]; then
+              if [ "$MAI_FAIL" = "true" ] && [ "$MAI_RETRY_DONE" = false ]; then
                 STATUS=$(gh api "/repos/${{ github.repository }}/actions/workflows/$MAI_ID/runs?per_page=1" --jq '.workflow_runs[0].status')
                 if [ "$STATUS" = "completed" ]; then
                   MAI_RETRY_DONE=true
                   CONCLUSION=$(gh api "/repos/${{ github.repository }}/actions/workflows/$MAI_ID/runs?per_page=1" --jq '.workflow_runs[0].conclusion')
                   if [ "$CONCLUSION" = "success" ]; then
                     echo "✅ Mai 重试成功"
-                    echo "mai_fail=false" >> $GITHUB_OUTPUT
+                    MAI_FAIL=false
                   else
                     echo "❌ Mai 重试仍失败"
                   fi
@@ -198,9 +198,9 @@ jobs:
               fi
 
               ALL_DONE=true
-              if [ "${{ steps.wait.outputs.koi_fail }}" = "true" ] && [ "$KOI_RETRY_DONE" = false ]; then ALL_DONE=false; fi
-              if [ "${{ steps.wait.outputs.astr_fail }}" = "true" ] && [ "$ASTR_RETRY_DONE" = false ]; then ALL_DONE=false; fi
-              if [ "${{ steps.wait.outputs.mai_fail }}" = "true" ] && [ "$MAI_RETRY_DONE" = false ]; then ALL_DONE=false; fi
+              if [ "$KOI_FAIL" = "true" ] && [ "$KOI_RETRY_DONE" = false ]; then ALL_DONE=false; fi
+              if [ "$ASTR_FAIL" = "true" ] && [ "$ASTR_RETRY_DONE" = false ]; then ALL_DONE=false; fi
+              if [ "$MAI_FAIL" = "true" ] && [ "$MAI_RETRY_DONE" = false ]; then ALL_DONE=false; fi
 
               if [ "$ALL_DONE" = true ]; then
                 break
@@ -210,8 +210,7 @@ jobs:
               WAIT_COUNT=$((WAIT_COUNT + 5))
             done
 
-            # 如果重试成功了就退出循环
-            if [ "${{ steps.wait.outputs.koi_fail }}" != "true" ] && [ "${{ steps.wait.outputs.astr_fail }}" != "true" ] && [ "${{ steps.wait.outputs.mai_fail }}" != "true" ]; then
+            if [ "$KOI_FAIL" != "true" ] && [ "$ASTR_FAIL" != "true" ] && [ "$MAI_FAIL" != "true" ]; then
               echo "✅ 所有重试成功"
               break
             fi
@@ -220,13 +219,42 @@ jobs:
               echo "⏳ 等待 10s 后再次重试..."
               sleep 10
             else
-              echo "❌ 重试 2 次后仍有失败，跳过失败的源"
+              echo "❌ 重试 2 次后仍有失败，将使用上次成功的数据"
             fi
           done
 
-      # 获取三个拉取任务的最新 Run ID
+          echo "koi_fail=$KOI_FAIL" >> $GITHUB_OUTPUT
+          echo "astr_fail=$ASTR_FAIL" >> $GITHUB_OUTPUT
+          echo "mai_fail=$MAI_FAIL" >> $GITHUB_OUTPUT
+
+      # 如果重试后仍有失败，从 gh-pages 分支获取上次成功的数据
+      - name: Fallback to last successful data
+        if: steps.retry.outputs.koi_fail == 'true' || steps.retry.outputs.astr_fail == 'true' || steps.retry.outputs.mai_fail == 'true'
+        run: |
+          mkdir -p dist/koi dist/astr dist/mai
+          
+          # 从 gh-pages 分支拉取上次成功部署的数据
+          git fetch origin gh-pages
+          
+          if [ "${{ steps.retry.outputs.koi_fail }}" = "true" ]; then
+            echo "⚠️ 回退 Koi 到上次成功数据..."
+            git show origin/gh-pages:koi/flat.json > dist/koi/flat.json 2>/dev/null || echo '[]' > dist/koi/flat.json
+          fi
+          
+          if [ "${{ steps.retry.outputs.astr_fail }}" = "true" ]; then
+            echo "⚠️ 回退 Astr 到上次成功数据..."
+            git show origin/gh-pages:astr/plugin_cache_original.json > dist/astr/plugin_cache_original.json 2>/dev/null || echo '{}' > dist/astr/plugin_cache_original.json
+          fi
+          
+          if [ "${{ steps.retry.outputs.mai_fail }}" = "true" ]; then
+            echo "⚠️ 回退 Mai 到上次成功数据..."
+            git show origin/gh-pages:mai/flat.json > dist/mai/flat.json 2>/dev/null || echo '[]' > dist/mai/flat.json
+          fi
+
+      # 获取三个拉取任务的最新 Run ID（如果失败回退则跳过）
       - name: Resolve latest run-ids
         id: runids
+        if: steps.retry.outputs.koi_fail != 'true' && steps.retry.outputs.astr_fail != 'true' && steps.retry.outputs.mai_fail != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -242,8 +270,9 @@ jobs:
           echo "astr_run_id=$ASTR_RUN_ID" >> "$GITHUB_OUTPUT"
           echo "mai_run_id=$MAI_RUN_ID" >> "$GITHUB_OUTPUT"
 
-      # 下载三个数据源的制品到 dist 目录
+      # 下载三个数据源的制品到 dist 目录（仅在全部成功时执行）
       - name: Download Koi Data
+        if: steps.retry.outputs.koi_fail != 'true' && steps.retry.outputs.astr_fail != 'true' && steps.retry.outputs.mai_fail != 'true'
         uses: actions/download-artifact@v8
         with:
           name: koi-data
@@ -253,6 +282,7 @@ jobs:
           run-id: ${{ steps.runids.outputs.koi_run_id }}
 
       - name: Download Astr Data
+        if: steps.retry.outputs.koi_fail != 'true' && steps.retry.outputs.astr_fail != 'true' && steps.retry.outputs.mai_fail != 'true'
         uses: actions/download-artifact@v8
         with:
           name: astr-data
@@ -262,6 +292,7 @@ jobs:
           run-id: ${{ steps.runids.outputs.astr_run_id }}
 
       - name: Download Mai Data
+        if: steps.retry.outputs.koi_fail != 'true' && steps.retry.outputs.astr_fail != 'true' && steps.retry.outputs.mai_fail != 'true'
         uses: actions/download-artifact@v8
         with:
           name: mai-data
