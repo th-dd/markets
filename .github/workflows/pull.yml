@@ -226,12 +226,43 @@ jobs:
           echo "astr_fail=$ASTR_FAIL" >> $GITHUB_OUTPUT
           echo "mai_fail=$MAI_FAIL" >> $GITHUB_OUTPUT
 
-      # 先创建 dist 目录
       - name: Create dist directories
         run: |
           mkdir -p dist/koi dist/astr dist/mai
 
-      # 下载成功的源（各自独立下载）
+      # 获取成功源的 Run ID（总是执行，内部判断）
+      - name: Resolve latest run-ids
+        id: runids
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # retry 步骤被跳过时，这些变量为空，需要默认 false
+          KOI_FAIL="${{ steps.retry.outputs.koi_fail }}"
+          ASTR_FAIL="${{ steps.retry.outputs.astr_fail }}"
+          MAI_FAIL="${{ steps.retry.outputs.mai_fail }}"
+          
+          if [ -z "$KOI_FAIL" ]; then KOI_FAIL=false; fi
+          if [ -z "$ASTR_FAIL" ]; then ASTR_FAIL=false; fi
+          if [ -z "$MAI_FAIL" ]; then MAI_FAIL=false; fi
+          
+          if [ "$KOI_FAIL" != "true" ]; then
+            KOI_WF_ID=$(gh api "/repos/${{ github.repository }}/actions/workflows/koi.yml" --jq '.id')
+            KOI_RUN_ID=$(gh api "/repos/${{ github.repository }}/actions/workflows/$KOI_WF_ID/runs?per_page=1" --jq '.workflow_runs[0].id')
+            echo "koi_run_id=$KOI_RUN_ID" >> $GITHUB_OUTPUT
+          fi
+          
+          if [ "$ASTR_FAIL" != "true" ]; then
+            ASTR_WF_ID=$(gh api "/repos/${{ github.repository }}/actions/workflows/astr.yml" --jq '.id')
+            ASTR_RUN_ID=$(gh api "/repos/${{ github.repository }}/actions/workflows/$ASTR_WF_ID/runs?per_page=1" --jq '.workflow_runs[0].id')
+            echo "astr_run_id=$ASTR_RUN_ID" >> $GITHUB_OUTPUT
+          fi
+          
+          if [ "$MAI_FAIL" != "true" ]; then
+            MAI_WF_ID=$(gh api "/repos/${{ github.repository }}/actions/workflows/mai.yml" --jq '.id')
+            MAI_RUN_ID=$(gh api "/repos/${{ github.repository }}/actions/workflows/$MAI_WF_ID/runs?per_page=1" --jq '.workflow_runs[0].id')
+            echo "mai_run_id=$MAI_RUN_ID" >> $GITHUB_OUTPUT
+          fi
+
       - name: Download Koi Data
         if: steps.retry.outputs.koi_fail != 'true'
         uses: actions/download-artifact@v8
@@ -262,7 +293,6 @@ jobs:
           repository: ${{ github.repository }}
           run-id: ${{ steps.runids.outputs.mai_run_id }}
 
-      # 回退失败的源到上次成功的数据
       - name: Fallback failed sources
         if: steps.retry.outputs.koi_fail == 'true' || steps.retry.outputs.astr_fail == 'true' || steps.retry.outputs.mai_fail == 'true'
         run: |
@@ -285,32 +315,6 @@ jobs:
             git show origin/gh-pages:mai/flat.json > dist/mai/flat.json 2>/dev/null || echo '[]' > dist/mai/flat.json
           fi
 
-      # 获取成功源的 Run ID（用于下载制品）
-      - name: Resolve latest run-ids
-        id: runids
-        if: steps.retry.outputs.koi_fail != 'true' || steps.retry.outputs.astr_fail != 'true' || steps.retry.outputs.mai_fail != 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if [ "${{ steps.retry.outputs.koi_fail }}" != "true" ]; then
-            KOI_WF_ID=$(gh api "/repos/${{ github.repository }}/actions/workflows/koi.yml" --jq '.id')
-            KOI_RUN_ID=$(gh api "/repos/${{ github.repository }}/actions/workflows/$KOI_WF_ID/runs?per_page=1" --jq '.workflow_runs[0].id')
-            echo "koi_run_id=$KOI_RUN_ID" >> $GITHUB_OUTPUT
-          fi
-          
-          if [ "${{ steps.retry.outputs.astr_fail }}" != "true" ]; then
-            ASTR_WF_ID=$(gh api "/repos/${{ github.repository }}/actions/workflows/astr.yml" --jq '.id')
-            ASTR_RUN_ID=$(gh api "/repos/${{ github.repository }}/actions/workflows/$ASTR_WF_ID/runs?per_page=1" --jq '.workflow_runs[0].id')
-            echo "astr_run_id=$ASTR_RUN_ID" >> $GITHUB_OUTPUT
-          fi
-          
-          if [ "${{ steps.retry.outputs.mai_fail }}" != "true" ]; then
-            MAI_WF_ID=$(gh api "/repos/${{ github.repository }}/actions/workflows/mai.yml" --jq '.id')
-            MAI_RUN_ID=$(gh api "/repos/${{ github.repository }}/actions/workflows/$MAI_WF_ID/runs?per_page=1" --jq '.workflow_runs[0].id')
-            echo "mai_run_id=$MAI_RUN_ID" >> $GITHUB_OUTPUT
-          fi
-
-      # 复制静态文件
       - name: Prepare static files
         run: |
           cp index.html dist/
@@ -318,7 +322,6 @@ jobs:
           cp favicon.ico dist/
           touch dist/.nojekyll
 
-      # 部署
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
